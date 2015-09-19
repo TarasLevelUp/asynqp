@@ -1,0 +1,6 @@
+The tests expect RabbitMQ to be run on localhost with next params:
+HOST: localhost
+PORT: 5672
+USERNAME: guest
+PASSWORD: guest
+VHOST: asynqp-tests

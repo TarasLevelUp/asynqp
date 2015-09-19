@@ -4,3 +4,4 @@ sphinx
 flake8
 coverage
 coveralls
+nose
