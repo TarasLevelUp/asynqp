@@ -45,9 +45,6 @@ class WhenRespondingToConnectionClose(OpenConnectionContext):
     def it_should_send_close_ok(self):
         self.server.should_have_received_method(0, spec.ConnectionCloseOK())
 
-    def it_should_set_the_future(self):
-        assert self.connection.closed.done()
-
     def it_should_not_block_clonnection_close(self):
         self.loop.run_until_complete(
             asyncio.wait_for(self.connection.close(), 0.2))
@@ -73,9 +70,6 @@ class WhenRecievingConnectionCloseOK(OpenConnectionContext):
 
     def it_should_close_the_transport(self):
         assert self.transport.closed
-
-    def it_should_set_the_future(self):
-        assert self.connection.closed.done()
 
 
 class WhenAConnectionThatIsClosingReceivesAMethod(OpenConnectionContext):

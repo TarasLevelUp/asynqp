@@ -58,7 +58,8 @@ def connect(host='localhost',
         kwargs['sock'] = sock
 
     dispatcher = Dispatcher()
-    transport, protocol = yield from loop.create_connection(lambda: AMQP(dispatcher, loop), **kwargs)
+    transport, protocol = yield from loop.create_connection(
+        lambda: AMQP(dispatcher, loop), **kwargs)
 
     # RPC-like applications require TCP_NODELAY in order to acheive
     # minimal response time. Actually, this library send data in one
@@ -69,7 +70,13 @@ def connect(host='localhost',
     if (sk.family in (socket.AF_INET, socket.AF_INET6)) and (sk.proto in (0, socket.IPPROTO_TCP)):
         sk.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
-    connection = yield from open_connection(loop, transport, protocol, dispatcher, {'username': username, 'password': password, 'virtual_host': virtual_host})
+    connection_info = {
+        'username': username,
+        'password': password,
+        'virtual_host': virtual_host
+    }
+    connection = yield from open_connection(
+        loop, transport, protocol, dispatcher, connection_info)
     return connection
 
 

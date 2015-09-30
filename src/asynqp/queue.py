@@ -257,8 +257,8 @@ class Consumer(object):
 
         This method is a :ref:`coroutine <coroutine>`.
         """
-        self.sender.send_BasicCancel(self.tag)
         try:
+            self.sender.send_BasicCancel(self.tag)
             yield from self.synchroniser.await(spec.BasicCancelOK)
         except AlreadyClosed:
             pass
