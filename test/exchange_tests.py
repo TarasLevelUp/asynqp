@@ -1,7 +1,9 @@
+import asynqp
 import asyncio
 import uuid
 from datetime import datetime
-import asynqp
+from unittest.mock import patch
+
 from asynqp import spec
 from asynqp import frames
 from asynqp import message
@@ -155,6 +157,29 @@ class WhenPublishingALongMessage(ExchangeContext):
             expected_body2,
             expected_body3
         ], any_order=False)
+
+
+class WhenPublishingWithFlushBuffers(ExchangeContext):
+    def given_a_message(self):
+        self.msg = asynqp.Message(
+            'body',
+        )
+
+    def when_I_publish_the_message(self):
+        self._expected = object()
+        fut = asyncio.Future()
+        fut.set_result(self._expected)
+        with patch("asynqp.protocol.AMQP._drain_helper",
+                   return_value=fut):
+            self.result = self.loop.run_until_complete(self.exchange.publish(
+                self.msg, 'routing.key', flush_buffers=True))
+
+    def it_should_call_drain(self):
+        assert self.result is self._expected
+
+    def it_should_send_message_as_normal(self):
+        expected_body = frames.ContentBodyFrame(self.channel.id, b'body')
+        self.server.should_have_received_frame(expected_body)
 
 
 class WhenDeletingAnExchange(ExchangeContext):

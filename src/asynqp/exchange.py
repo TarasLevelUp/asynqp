@@ -32,14 +32,18 @@ class Exchange(object):
         self.auto_delete = auto_delete
         self.internal = internal
 
-    def publish(self, message, routing_key, *, mandatory=True):
+    def publish(self, message, routing_key, *, mandatory=True, flush_buffers=False):
         """
         Publish a message on the exchange, to be asynchronously delivered to queues.
 
         :param asynqp.Message message: the message to send
         :param str routing_key: the routing key with which to publish the message
+        :param bool flush_buffers: If set to `True` this function will return an `awaitable`,
+                                   that will wait for all TCP buffers to be flushed.
         """
         self.sender.send_BasicPublish(self.name, routing_key, mandatory, message)
+        if flush_buffers:
+            return self.sender.drain()
 
     @asyncio.coroutine
     def delete(self, *, if_unused=True):
