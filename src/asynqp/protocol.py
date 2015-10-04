@@ -6,8 +6,61 @@ from .exceptions import AMQPError, ConnectionLostError
 from .log import log
 
 
-class AMQP(asyncio.Protocol):
+class FlowControl(asyncio.Protocol):
+    """ Basicly took from asyncio.streams """
+
+    def __init__(self, *, loop):
+        self._loop = loop
+        self._paused = False
+        self._drain_waiter = None
+        self._connection_lost = False
+
+    def pause_writing(self):
+        assert not self._paused
+        self._paused = True
+
+    def resume_writing(self):
+        assert self._paused
+        self._paused = False
+
+        waiter = self._drain_waiter
+        if waiter is not None:
+            self._drain_waiter = None
+            if not waiter.done():
+                waiter.set_result(None)
+
+    def connection_lost(self, exc):
+        self._connection_lost = True
+        # Wake up the writer if currently paused.
+        if not self._paused:
+            return
+        waiter = self._drain_waiter
+        if waiter is None:
+            return
+        self._drain_waiter = None
+        if waiter.done():
+            return
+        if exc is None:
+            waiter.set_result(None)
+        else:
+            waiter.set_exception(exc)
+
+    @asyncio.coroutine
+    def _drain_helper(self):
+        if self._connection_lost:
+            raise ConnectionResetError('Connection lost')
+        if not self._paused:
+            return
+        waiter = self._drain_waiter
+        assert waiter is None or waiter.cancelled()
+        waiter = asyncio.Future(loop=self._loop)
+        self._drain_waiter = waiter
+        yield from waiter
+
+
+class AMQP(FlowControl):
     def __init__(self, dispatcher, loop):
+        super().__init__(loop=loop)
         self.dispatcher = dispatcher
         self.partial_frame = b''
         self.frame_reader = FrameReader()
@@ -19,7 +72,8 @@ class AMQP(asyncio.Protocol):
 
     def data_received(self, data):
         while data:
-            self.heartbeat_monitor.heartbeat_received()  # the spec says 'any octet may substitute for a heartbeat'
+            # the spec says 'any octet may substitute for a heartbeat'
+            self.heartbeat_monitor.heartbeat_received()
 
             try:
                 result = self.frame_reader.read_frame(data)
@@ -48,6 +102,7 @@ class AMQP(asyncio.Protocol):
         self.heartbeat_monitor.start(heartbeat_interval)
 
     def connection_lost(self, exc):
+        super().connection_lost(exc)
         # If self._closed=True - we closed the transport ourselves. No need to
         # dispatch PoisonPillFrame, as we should have closed everything already
         if not self._closed:
