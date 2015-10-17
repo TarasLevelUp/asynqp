@@ -65,7 +65,8 @@ class Synchroniser(object):
 
         for method in expected_methods:
             self._futures[method].append(fut)
-        return fut
+
+        return asyncio.shield(fut, loop=self._loop)
 
     def notify(self, method, result=None):
         while True:

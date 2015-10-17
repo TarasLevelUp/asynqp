@@ -468,3 +468,85 @@ class WhenIDeclareQueueWithNoWait(OpenChannelContext):
         self.server.should_have_received_method(
             self.channel.id, spec.QueueDeclare(
                 0, '123', False, True, True, False, True, {}))
+
+
+class WhenConsumingWithGetOnQueueAndCancelTask(QueueContext):
+    def given_i_use_BasicGet_in_loop(self):
+        self.coro = asyncio.async(self._consumer(), loop=self.loop)
+        self.msg = self._default = object()
+        self.tick()
+
+    @asyncio.coroutine
+    def _consumer(self):
+        while True:
+            self.msg = yield from self.queue.get()
+
+    def when_I_cancel_task_before_result_arrives(self):
+        self.coro.cancel()
+        self.tick()
+        self.server.send_method(self.channel.id, spec.BasicGetEmpty(''))
+        self.tick()
+
+    def it_should_stop_task(self):
+        assert self.coro.cancelled()
+        try:
+            self.loop.run_until_complete(
+                asyncio.wait_for(self.coro, 0.2))
+        except asyncio.CancelledError:
+            pass
+
+    def it_should_skip_BasicGetEmpty_frame(self):
+        assert not self.queue.synchroniser._futures[spec.BasicGetOK]
+
+    def it_should_not_set_msg(self):
+        assert self.msg is self._default
+
+    def it_should_not_block_close(self):
+        self.loop.run_until_complete(
+            asyncio.wait_for(self.channel.close(), 0.2))
+        self.loop.run_until_complete(
+            asyncio.wait_for(self.connection.close(), 0.2))
+
+
+# class WhenGettingInParallelAndCancelTask(QueueContext):
+#     def given_i_use_BasicGet_in_2_tasks(self):
+#         self.coro1 = asyncio.async(self._consumer(), loop=self.loop)
+#         self.coro2 = asyncio.async(self._consumer(), loop=self.loop)
+#         self.tick()
+
+#     @asyncio.coroutine
+#     def _consumer(self):
+#         return (yield from self.queue.get())
+
+#     def when_I_cancel_one_of_tasks(self):
+#         self.coro1.cancel()
+#         self.tick()
+#         # Must be ignored for coro1
+#         self.server.send_method(self.channel.id, spec.BasicGetEmpty(''))
+#         # Must be delivered to coro2
+#         self.expected_message = asynqp.Message(
+#             'body', timestamp=datetime(2014, 5, 5))
+#         self.server.send_method(self.channel.id, spec.BasicGetOK(
+#             123, False, 'my.exchange', 'routing.key', 0))
+#         header = message.get_header_payload(
+#             self.expected_message, spec.BasicGet.method_type[0])
+#         self.server.send_frame(
+#             frames.ContentHeaderFrame(self.channel.id, header))
+#         body = message.get_frame_payloads(self.expected_message, 100)[0]
+#         self.server.send_frame(frames.ContentBodyFrame(self.channel.id, body))
+#         self.tick()
+#         self.tick()
+
+#     def it_should_stop_coro1(self):
+#         assert self.coro1.cancelled()
+#         try:
+#             self.loop.run_until_complete(
+#                 asyncio.wait_for(self.coro1, 0.2))
+#         except asyncio.CancelledError:
+#             pass
+
+#     def it_should_deliver_message_to_coro2(self):
+#         assert self.coro2.result() is not None
+#         assert self.coro2.result() == self.expected_message
+#         assert self.coro2.result().exchange_name == 'my.exchange'
+#         assert self.coro2.result().routing_key == 'routing.key'
