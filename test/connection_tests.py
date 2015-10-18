@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from asynqp import spec
+from asynqp import spec, exceptions
 from asynqp.connection import open_connection
 from .base_contexts import MockServerContext, OpenConnectionContext
 
@@ -110,3 +110,24 @@ class WhenAConnectionIsLostCloseConnection(OpenConnectionContext):
 
     def it_should_not_hang(self):
         self.loop.run_until_complete(asyncio.wait_for(self.connection.close(), 0.2))
+
+
+class WhenServerAndClientCloseConnectionAtATime(OpenConnectionContext):
+    def when_both_sides_close_channel(self):
+        # Client tries to close connection
+        self.task = asyncio.async(self.connection.close(), loop=self.loop)
+        self.tick()
+        # Before OK arrives server closes connection
+        self.server.send_method(
+            0, spec.ConnectionClose(123, 'you muffed up', 10, 20))
+        self.tick()
+        self.tick()
+        self.task.result()
+
+    def if_should_have_closed_connection(self):
+        assert self.connection._closing
+
+    def it_should_have_killed_synchroniser_with_server_error(self):
+        assert isinstance(
+            self.connection.synchroniser.connection_exc,
+            exceptions.ServerConnectionClosed)
