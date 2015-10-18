@@ -19,8 +19,8 @@ class Dispatcher(object):
         if isinstance(frame, frames.HeartbeatFrame):
             return
         # XXX: Could not find a better way to close channels...
-        elif isinstance(frame, (spec.ConnectionCloseOK,
-                                spec.ConnectionClose)):
+        elif isinstance(frame.payload, (spec.ConnectionCloseOK,
+                                        spec.ConnectionClose)):
             # Notify all connection channels about it
             for handler in self.handlers.values():
                 handler(frame)
