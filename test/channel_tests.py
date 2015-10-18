@@ -276,3 +276,24 @@ class WhenServerClosesConnectionChannelShouldAlsoClose(OpenChannelContext):
 
     def if_should_have_closed_channel(self):
         assert self.was_closed
+
+
+class WhenServerAndClientCloseAtATime(OpenChannelContext):
+    def when_both_sides_close_channel(self):
+        # Client tries to close connection
+        self.task = asyncio.async(self.channel.close(), loop=self.loop)
+        self.tick()
+        # Before OK arrives server closes connection
+        self.server.send_method(
+            self.channel.id,
+            spec.ChannelClose(404, 'i am tired of you', 40, 50))
+        self.tick()
+        self.task.result()
+        self.was_closed = self.channel._closing
+
+    def it_should_not_hang_client_close(self):
+        self.loop.run_until_complete(asyncio.wait_for(self.task, 0.2))
+
+    def if_should_have_closed_channel(self):
+        assert self.channel._closing
+        assert self.channel.synchroniser.connection_exc == exceptions.NotFound
