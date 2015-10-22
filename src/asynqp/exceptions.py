@@ -40,6 +40,10 @@ class ServerConnectionClosed(AMQPConnectionError):
     """ Connection was closed by server """
 
 
+class ConsumerCancelled(Exception):
+    pass
+
+
 class UndeliverableMessage(ValueError):
     pass
 

@@ -5,12 +5,13 @@ from .message import Message, IncomingMessage
 from .connection import Connection
 from .channel import Channel
 from .exchange import Exchange
-from .queue import Queue, QueueBinding, Consumer
+from .queue import Queue, QueueBinding, Consumer, QueuedConsumer
 
 
 __all__ = [
     "Message", "IncomingMessage",
     "Connection", "Channel", "Exchange", "Queue", "QueueBinding", "Consumer",
+    "QueuedConsumer",
     "connect", "connect_and_open_channel"
 ]
 __all__ += exceptions.__all__
