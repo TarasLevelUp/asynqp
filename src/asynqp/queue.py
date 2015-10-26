@@ -115,6 +115,47 @@ class Queue(object):
         return consumer
 
     @asyncio.coroutine
+    def queued_consumer(self, *, no_local=False, no_ack=False, exclusive=False,
+                        arguments=None):
+        """
+        Start a consumer on the queue. Messages will be delivered and stored
+        in a queue-like :class:`QueuedConsumer` object. Example:
+
+        .. code-block:: python
+
+            consumer = queue.queued_consumer(consumer, no_ack=True)
+            while True:
+                try:
+                    msg = yield from consumer.get()
+                except asynqp.ConsumerCancelled:
+                    break
+                # process message
+
+        This method is a :ref:`coroutine <coroutine>`.
+
+        :keyword bool no_local: If true, the server will not deliver messages
+            that were published by this connection.
+        :keyword bool no_ack: If true, messages delivered to the consumer don't
+            require acknowledgement.
+        :keyword bool exclusive: If true, only this consumer can access the
+            queue.
+        :keyword dict arguments: Table of optional parameters for extensions to
+            the AMQP protocol. See :ref:`extensions`.
+        :note: If created with ``no_ack=True``, the consumer will not purge
+            messages on channel/connection errors. If ``no_ack=False`` such an
+            error will reject messages, so they will be removed from queue
+            right away.
+
+        :return: The newly created :class:`QueuedConsumer` object.
+        """
+        consumer = QueuedConsumer(loop=self._loop, no_ack=no_ack)
+        handle = yield from self.consume(
+            consumer, no_local=no_local, no_ack=no_ack, exclusive=exclusive,
+            arguments=arguments)
+        consumer._set_consumer_handle(handle)
+        return consumer
+
+    @asyncio.coroutine
     def get(self, *, no_ack=False):
         """
         Synchronously get a message from the queue.
@@ -317,13 +358,31 @@ class Consumers(object):
 
 
 class QueuedConsumer:
+    """
+    A consumer asynchronously recieves messages from a queue as they arrive.
 
-    def __init__(self, *, loop):
+    QueuedConsumer is created using
+    :meth:`Queue.queued_consumer() <Queue.queued_consumer>`.
+
+    .. attribute :: tag
+
+        A string representing the *consumer tag* used by the server to identify
+            this consumer.
+
+    .. attribute :: cancelled
+
+        Boolean. True if the consumer has been successfully cancelled.
+    """
+
+    def __init__(self, *, loop, no_ack):
         self.loop = loop
         self._queue = asyncio.Queue(loop=loop)
         self._exc = None
         self._waiters = []
         self._cancelled = False
+        self._no_ack = no_ack
+
+    # Magical ``consume()`` interface for callbacks
 
     def __call__(self, msg):
         self._queue.put_nowait(msg)
@@ -331,13 +390,14 @@ class QueuedConsumer:
     def on_error(self, exc):
         # So future calls raise error
         self._exc = exc
-        # Purge all messages, that were in queue. They are to be treated as
-        # nack'ed
-        while True:
-            try:
-                self._queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        if not self._no_ack:
+            # Purge all messages, that were in queue. They are to be treated as
+            # nack'ed
+            while True:
+                try:
+                    self._queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 
         # All pending waiters if any must be killed with the same exception
         for waiter in self._waiters:
@@ -346,23 +406,53 @@ class QueuedConsumer:
     def on_cancel(self):
         self._cancelled = True
 
-    def _check_error(self):
-        if self._exc:
-            raise self._exc
+    def _set_consumer_handle(self, consumer):
+        self._consumer = consumer
+
+    # Public API
+
+    @property
+    def tag(self):
+        return self._consumer.tag
+
+    @property
+    def cancelled(self):
+        return self._consumer.cancelled
+
+    @asyncio.coroutine
+    def cancel(self):
+        """
+        Cancel the consumer and stop recieving messages.
+
+        This method is a :ref:`coroutine <coroutine>`.
+        """
+        yield from self._consumer.cancel()
 
     def empty(self):
-        self._check_error()
+        """ Check if no messages arrived on the consumer """
         return self._queue.empty()
 
     @asyncio.coroutine
     def get(self):
-        """ Get 1 message from queue. Wait if no arrived yet """
-        self._check_error()
+        """
+            If messages arrived return one of it right away. If not - wait for
+            at least 1 message.
+            This coroutine is usefull when we want to balance processing
+            between several handlers.
 
-        if not self.empty():
+            This method is a :ref:`coroutine <coroutine>`.
+
+            :return: an :class:`IncomingMessage`
+        """
+        # If there are items in queue - just return them, as we don't interact
+        # with server. If created with no_ack=False messages will be purged
+        # anyway on error.
+        if not self._queue.empty():
             return self._queue.get_nowait()
-        elif self._cancelled:
-            # We only cancel if no more data received from consumer
+
+        if self._exc:
+            raise self._exc
+        if self._cancelled:
             raise ConsumerCancelled()
 
         task = asyncio.async(self._queue.get(), loop=self.loop)
@@ -375,10 +465,18 @@ class QueuedConsumer:
 
     @asyncio.coroutine
     def getmany(self):
-        """ Get all accumulated messages from queue. Wait if no arrived yet """
-        self._check_error()
+        """
+            Get all accumulated messages. If not messages arrived yet - wait
+            for at least 1 message.
+            This coroutine is usefull when we can perform *bulk* processing
+            of messages. For example inserting it into a DB in bulk.
 
-        if self.empty():
+            This method is a :ref:`coroutine <coroutine>`.
+
+            :return: a ``list`` of :class:`IncomingMessage`
+                objects
+        """
+        if self._queue.empty():
             msg = yield from self.get()
             return [msg]
         else:
