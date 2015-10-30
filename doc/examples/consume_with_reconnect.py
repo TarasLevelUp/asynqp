@@ -18,28 +18,30 @@ class DataIndexer:
     @asyncio.coroutine
     def start(self):
         # connect to the RabbitMQ broker
-        consumer = yield from self.connect()
+        yield from self.connect()
+        log.info('Started indexing')
         try:
             while True:
                 try:
-                    yield from self.index(consumer)
-                except asynqp.ConnectionError:
+                    yield from self.index()
+                except (asynqp.ConnectionLostError,
+                        asynqp.ServerConnectionClosed):
                     # Wait for reconnect.
-                    consumer = yield from self.reconnect()
+                    yield from self.reconnect()
         finally:
             yield from self.disconnect()
 
     @asyncio.coroutine
     def connect(self):
-        self.connection = yield from asynqp.connect(**self.params)
+        self.connection = yield from asynqp.connect(
+            loop=self.loop, **self.params)
         # Open a communications channel
         self.channel = yield from self.connection.open_channel()
         # Create a queue and an exchange on the broker
-        queue = yield from self.channel.declare_queue(
-            'test.queue', no_ack=False)
+        queue = yield from self.channel.declare_queue('some.queue')
         self.consumer = yield from queue.queued_consumer()
 
-    @asyncio
+    @asyncio.coroutine
     def disconnect(self):
         yield from self.consumer.cancel()
         yield from self.channel.close()
@@ -48,14 +50,10 @@ class DataIndexer:
     @asyncio.coroutine
     def reconnect(self):
         log.warning('Connection lost. Reconnecting to rabbitmq...')
-        try:
-            yield from asyncio.wait_for(
-                self.disconnect(), timeout=1, loop=self.loop)
-        except asyncio.TimeoutError:
-            log.warning("Failed to disconnect properly on reconnect")
+        yield from self.disconnect()
         while True:
             try:
-                consumer = yield from self.connect()
+                yield from self.connect()
             except (ConnectionError, OSError):
                 log.warning(
                     'Failed to reconnect to rabbitmq. Try again in '
@@ -63,14 +61,15 @@ class DataIndexer:
                 yield from asyncio.sleep(
                     self.RECONNECT_TIMEOUT, loop=self.loop)
             else:
-                return consumer
+                log.info('Successfully reconnected to rabbitmq')
+                break
 
     # Indexer logic
 
     @asyncio.coroutine
-    def index(self, consumer):
+    def index(self):
         while True:
-            msg = yield from consumer.get()
+            msg = yield from self.consumer.get()
 
             try:
                 yield from self._index(msg)
@@ -113,13 +112,16 @@ class DataIndexer:
         #         yield from asyncio.sleep(self.DB_WAITER, loop=self.loop)
         #     else:
         #         msg.ack()
-        pass
+        print(msg, msg.body)
+        msg.ack()
 
 
 def main():
     # My preference to disable global event_loop.
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(None)
+
+    logging.basicConfig(level=logging.INFO)
 
     indexer = DataIndexer(
         host='localhost',
@@ -129,9 +131,9 @@ def main():
         loop=loop
     )
     # Start main indexing task in the background
-    main_task = asyncio.async(indexer.start())
+    main_task = asyncio.async(indexer.start(), loop=loop)
     try:
-        loop.run_forever()
+        loop.run_until_complete(main_task)
     except KeyboardInterrupt:
         main_task.cancel()
         # Note: Always try to run the loop to the end of task after it's
@@ -147,6 +149,7 @@ def main():
         #       This block of code may not release the lock if we don't run
         #       our loop long enough for it to finish all finally blocks.
         loop.run_until_complete(main_task)
+    loop.close()
 
 if __name__ == "__main__":
     main()
