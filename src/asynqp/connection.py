@@ -163,14 +163,14 @@ class ConnectionActor(routing.Actor):
         # Don't close transport right away, as CloseOK might not get to server
         # yet. At least give the loop a spin before we do so.
         # TODO: After FlowControl is implemented change this to drain and close
-        self._loop.call_soon(self.protocol.transport.close)
+        self._loop.call_soon(self.protocol.close)
 
     def handle_ConnectionCloseOK(self, frame):
         self.synchroniser.notify(spec.ConnectionCloseOK)
         exc = ClientConnectionClosed()
         self._close_all(exc)
         # We already agread with server on closing, so lets do it right away
-        self.protocol.transport.close()
+        self.protocol.close()
 
     def _close_all(self, exc):
         # Close heartbeat

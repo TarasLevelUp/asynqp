@@ -131,3 +131,29 @@ class WhenServerAndClientCloseConnectionAtATime(OpenConnectionContext):
         assert isinstance(
             self.connection.synchroniser.connection_exc,
             exceptions.ServerConnectionClosed)
+
+
+class WhenServerClosesTransportWithoutConnectionClose(OpenConnectionContext):
+
+    def given_a_channel(self):
+        task = self.loop.create_task(self.connection.open_channel())
+        self.tick()
+        self.server.send_method(1, spec.ChannelOpenOK(''))
+        self.channel = self.wait_for(task)
+
+    def when_server_closes_transport(self):
+        try:
+            self.protocol.connection_lost(None)
+        except exceptions.ConnectionLostError:
+            pass
+        self.tick()
+        self.tick()
+        self.tick()
+
+    def it_should_raise_error_in_connection_methods(self):
+        try:
+            self.wait_for(self.channel.declare_queue("some.queue"))
+        except exceptions.ConnectionLostError as err:
+            assert type(err) == exceptions.ConnectionLostError
+        else:
+            assert False, "ConnectionLostError not raised"

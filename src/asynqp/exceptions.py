@@ -5,6 +5,10 @@ from .spec import EXCEPTIONS, CONSTANTS_INVERSE
 __all__ = [
     "AMQPError",
     "ConnectionLostError",
+    "ServerConnectionClosed",
+    "ClientChannelClosed",
+    "ClientConnectionClosed",
+    "AlreadyClosed",
     "UndeliverableMessage",
     "Deleted"
 ]
