@@ -4,7 +4,7 @@ from . import spec
 from . import routing
 from .channel import ChannelFactory
 from .exceptions import (
-    AlreadyClosed, ClientConnectionClosed, ServerConnectionClosed)
+    AMQPConnectionError, ClientConnectionClosed, ServerConnectionClosed)
 from .log import log
 
 
@@ -75,7 +75,7 @@ class Connection(object):
                 self.sender.send_Close(
                     0, 'Connection closed by application', 0, 0)
                 yield from self.synchroniser.await(spec.ConnectionCloseOK)
-            except AlreadyClosed:
+            except AMQPConnectionError:
                 # For example if both sides want to close or the connection
                 # is closed.
                 pass
