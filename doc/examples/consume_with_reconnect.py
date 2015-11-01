@@ -42,9 +42,11 @@ class DataIndexer:
         self.channel = yield from self.connection.open_channel()
         # Create a queue and an exchange on the broker
         self.queue = yield from self.channel.declare_queue('some.queue')
+        self.consumer = yield from self.queue.queued_consumer()
 
     @asyncio.coroutine
     def disconnect(self):
+        yield from self.consumer.cancel()
         yield from self.channel.close()
         yield from self.connection.close()
 
@@ -67,9 +69,8 @@ class DataIndexer:
 
     @asyncio.coroutine
     def index(self):
-        consumer = yield from self.queue.queued_consumer()
         while True:
-            msg = yield from consumer.get()
+            msg = yield from self.consumer.get()
 
             try:
                 yield from self._index(msg)

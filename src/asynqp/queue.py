@@ -409,6 +409,15 @@ class QueuedConsumer:
     QueuedConsumer is created using
     :meth:`Queue.queued_consumer() <Queue.queued_consumer>`.
 
+    :class:`QueuedConsumer` supports the async context manager protocol 
+    and async iterator protocol:
+
+    .. code-block:: python
+
+        async with self.queue.queued_consumer() as consumer:
+            async for msg in consumer:
+                # process msg
+
     .. attribute :: tag
 
         A string representing the *consumer tag* used by the server to identify
@@ -511,7 +520,7 @@ class QueuedConsumer:
     @asyncio.coroutine
     def getmany(self):
         """
-            Get all accumulated messages. If not messages arrived yet - wait
+            Get all accumulated messages. If no messages arrived yet - wait
             for at least 1 message.
             This coroutine is usefull when we can perform *bulk* processing
             of messages. For example inserting it into a DB in bulk.
