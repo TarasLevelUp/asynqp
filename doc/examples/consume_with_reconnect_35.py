@@ -15,48 +15,44 @@ class DataIndexer:
 
     # Connect/reconnect logic
 
-    @asyncio.coroutine
-    def start(self):
+    async def start(self):
         # connect to the RabbitMQ broker
-        yield from self.connect()
+        await self.connect()
         log.info('Started indexing')
         try:
             while True:
                 try:
-                    yield from self.index()
+                    await self.index()
                 except asynqp.AMQPConnectionError:
                     # Wait for reconnect.
-                    yield from self.reconnect()
+                    await self.reconnect()
         except asyncio.CancelledError:
             pass
         finally:
-            yield from self.disconnect()
+            await self.disconnect()
 
-    @asyncio.coroutine
-    def connect(self):
-        self.connection = yield from asynqp.connect(
+    async def connect(self):
+        self.connection = await asynqp.connect(
             loop=self.loop, **self.params)
         # Open a communications channel
-        self.channel = yield from self.connection.open_channel()
+        self.channel = await self.connection.open_channel()
         # Create a queue and an exchange on the broker
-        self.queue = yield from self.channel.declare_queue('some.queue')
+        self.queue = await self.channel.declare_queue('some.queue')
 
-    @asyncio.coroutine
-    def disconnect(self):
-        yield from self.channel.close()
-        yield from self.connection.close()
+    async def disconnect(self):
+        await self.channel.close()
+        await self.connection.close()
 
-    @asyncio.coroutine
-    def reconnect(self):
+    async def reconnect(self):
         log.warning('Connection lost. Reconnecting to rabbitmq...')
         while True:
             try:
-                yield from self.connect()
+                await self.connect()
             except (ConnectionError, OSError):
                 log.warning(
                     'Failed to reconnect to rabbitmq. Try again in '
                     '{} seconds...'.format(self.RECONNECT_TIMEOUT))
-                yield from asyncio.sleep(
+                await asyncio.sleep(
                     self.RECONNECT_TIMEOUT, loop=self.loop)
             else:
                 log.info('Successfully reconnected to rabbitmq')
@@ -64,26 +60,22 @@ class DataIndexer:
 
     # Indexer logic
 
-    @asyncio.coroutine
-    def index(self):
-        consumer = yield from queue.queued_consumer()
-        while True:
-            msg = yield from consumer.get()
+    async def index(self):
+        async with self.queue.queued_consumer() as consumer:
+            async for msg in consumer:
+                try:
+                    await self._index(msg)
+                except asyncio.CancelledError:
+                    # We can't be sure, that the message was processed, most
+                    # likely not.
+                    msg.reject()
+                except Exception:
+                    log.error(
+                        "Something bad happend while processing msg=%s",
+                        msg.body, exc_info=True)
+                    msg.reject()
 
-            try:
-                yield from self._index(msg)
-            except asyncio.CancelledError:
-                # We can't be sure, that the message was processed, most likely
-                # not.
-                msg.reject()
-            except Exception:
-                log.error(
-                    "Something bad happend while processing msg=%s",
-                    msg.body, exc_info=True)
-                msg.reject()
-
-    @asyncio.coroutine
-    def _index(self, msg):
+    async def _index(self, msg):
         # Index message.
         # Most likely you will put a try/except here to work on Database
         # specific errors, like AlreadyIndexed, when you will want to call

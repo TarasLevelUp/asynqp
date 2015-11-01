@@ -1,10 +1,12 @@
 import asyncio
 import re
+import sys
 from operator import delitem
 from . import spec
 from .exceptions import Deleted, AMQPError, ConsumerCancelled
+from .compat import _UserCoroutine
 
-
+PY_35 = sys.version_info >= (3, 5)
 VALID_QUEUE_NAME_RE = re.compile(r'^(?!amq\.)(\w|[-.:])*$', flags=re.A)
 
 
@@ -76,7 +78,6 @@ class Queue(object):
         self.reader.ready()
         return b
 
-    @asyncio.coroutine
     def consume(self, callback, *, no_local=False, no_ack=False, exclusive=False, arguments=None):
         """
         Start a consumer on the queue. Messages will be delivered asynchronously to the consumer.
@@ -102,10 +103,18 @@ class Queue(object):
 
         :return: The newly created :class:`Consumer` object.
         """
+        return _ConsumerContext(self._consume(
+            callback, no_local=no_local, no_ack=no_ack,
+            exclusive=exclusive, arguments=arguments))
+
+    @asyncio.coroutine
+    def _consume(self, callback, *, no_local=False, no_ack=False,
+                 exclusive=False, arguments=None):
         if self.deleted:
             raise Deleted("Queue {} was deleted".format(self.name))
 
-        self.sender.send_BasicConsume(self.name, no_local, no_ack, exclusive, arguments or {})
+        self.sender.send_BasicConsume(
+            self.name, no_local, no_ack, exclusive, arguments or {})
         tag = yield from self.synchroniser.await(spec.BasicConsumeOK)
         consumer = Consumer(
             tag, callback, self.sender, self.synchroniser, self.reader,
@@ -114,7 +123,6 @@ class Queue(object):
         self.reader.ready()
         return consumer
 
-    @asyncio.coroutine
     def queued_consumer(self, *, no_local=False, no_ack=False, exclusive=False,
                         arguments=None):
         """
@@ -148,8 +156,16 @@ class Queue(object):
 
         :return: The newly created :class:`QueuedConsumer` object.
         """
+        return _ConsumerContext(self._queued_consumer(
+            no_local=no_local, no_ack=no_ack, exclusive=exclusive,
+            arguments=arguments))
+
+    @asyncio.coroutine
+    def _queued_consumer(
+            self, *, no_local=False, no_ack=False, exclusive=False,
+            arguments=None):
         consumer = QueuedConsumer(loop=self._loop, no_ack=no_ack)
-        handle = yield from self.consume(
+        handle = yield from self._consume(
             consumer, no_local=no_local, no_ack=no_ack, exclusive=exclusive,
             arguments=arguments)
         consumer._set_consumer_handle(handle)
@@ -357,6 +373,22 @@ class Consumers(object):
                 consumer.callback.on_error(exc)
 
 
+class _ConsumerContext(_UserCoroutine):
+    """ Coroutine proxy, that can be used as async context manager
+    """
+
+    if PY_35:
+
+        @asyncio.coroutine
+        def __aenter__(self):
+            self._consumer = yield from self._coro
+            return self._consumer
+
+        @asyncio.coroutine
+        def __aexit__(self, exc_type, exc, tb):
+            yield from self._consumer.cancel()
+
+
 class QueuedConsumer:
     """
     A consumer asynchronously recieves messages from a queue as they arrive.
@@ -484,3 +516,16 @@ class QueuedConsumer:
             while not self.empty():
                 res.append(self._queue.get_nowait())
             return res
+
+    # Python 3.5 API
+
+    if PY_35:
+
+        @asyncio.coroutine
+        def __aiter__(self):
+            return self
+
+        @asyncio.coroutine
+        def __anext__(self):
+            return (yield from self.get())
+
