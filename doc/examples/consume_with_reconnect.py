@@ -24,7 +24,9 @@ class DataIndexer:
             while True:
                 try:
                     yield from self.index()
-                except asynqp.AMQPConnectionError:
+                except asynqp.AMQPConnectionError as err:
+                    log.warning('Connection lost. Error %s. Reconnecting to '
+                                'rabbitmq...', err)
                     # Wait for reconnect.
                     yield from self.reconnect()
         except asyncio.CancelledError:
@@ -48,7 +50,6 @@ class DataIndexer:
 
     @asyncio.coroutine
     def reconnect(self):
-        log.warning('Connection lost. Reconnecting to rabbitmq...')
         while True:
             try:
                 yield from self.connect()
@@ -66,7 +67,7 @@ class DataIndexer:
 
     @asyncio.coroutine
     def index(self):
-        consumer = yield from queue.queued_consumer()
+        consumer = yield from self.queue.queued_consumer()
         while True:
             msg = yield from consumer.get()
 

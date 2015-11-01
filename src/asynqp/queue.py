@@ -328,6 +328,19 @@ class Consumer(object):
             self.callback.on_cancel()
 
 
+    # Python 3.5 API
+
+    if PY_35:
+
+        @asyncio.coroutine
+        def __aenter__(self):
+            return self
+
+        @asyncio.coroutine
+        def __aexit__(self, exc_type, exc, tb):
+            yield from self.cancel()
+
+
 class QueueFactory(object):
     def __init__(self, sender, synchroniser, reader, consumers, *, loop):
         self._loop = loop
@@ -528,4 +541,12 @@ class QueuedConsumer:
         @asyncio.coroutine
         def __anext__(self):
             return (yield from self.get())
+
+        @asyncio.coroutine
+        def __aenter__(self):
+            return self
+
+        @asyncio.coroutine
+        def __aexit__(self, exc_type, exc, tb):
+            yield from self.cancel()
 

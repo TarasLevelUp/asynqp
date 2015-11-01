@@ -23,9 +23,11 @@ class DataIndexer:
             while True:
                 try:
                     await self.index()
-                except asynqp.AMQPConnectionError:
+                except asynqp.AMQPConnectionError as err:
+                    log.warning('Connection lost. Error %s. Reconnecting to '
+                                'rabbitmq...', err)
                     # Wait for reconnect.
-                    await self.reconnect()
+                    await self.reconnect(err)
         except asyncio.CancelledError:
             pass
         finally:
@@ -43,8 +45,7 @@ class DataIndexer:
         await self.channel.close()
         await self.connection.close()
 
-    async def reconnect(self):
-        log.warning('Connection lost. Reconnecting to rabbitmq...')
+    async def reconnect(self, err):
         while True:
             try:
                 await self.connect()

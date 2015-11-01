@@ -318,7 +318,7 @@ class ChannelActor(routing.Actor):
         """ AMQP server closed the connection with an error """
         # Make sure all `close` calls don't deadlock
         self.channel._closing = True
-        exc = ServerConnectionClosed()
+        exc = ServerConnectionClosed(frame.payload.reply_text)
         self._close_all(exc)
 
     def handle_ConnectionCloseOK(self, frame):

@@ -157,7 +157,7 @@ class ConnectionActor(routing.Actor):
         # Notify server we are OK to close.
         self.sender.send_CloseOK()
         self.connection._closing = True
-        exc = ServerConnectionClosed()
+        exc = ServerConnectionClosed(frame.payload.reply_text)
         self._close_all(exc)
 
         # Don't close transport right away, as CloseOK might not get to server
