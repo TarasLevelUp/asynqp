@@ -393,7 +393,6 @@ class MessageReceiver(object):
             payload.routing_key,
             payload.consumer_tag
         )
-
         # Delivers message to consumers when done
         self.is_getok_message = False
         self.reader.ready()

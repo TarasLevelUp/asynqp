@@ -57,6 +57,9 @@ Consumers
 .. autoclass:: Consumer
 	:members:
 
+.. autoclass:: QueuedConsumer
+    :members:
+
 
 Message objects
 ---------------

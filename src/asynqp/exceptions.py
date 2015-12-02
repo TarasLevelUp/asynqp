@@ -40,6 +40,10 @@ class ChannelClosed(AMQPChannelError):
     """ Channel was closed by client """
 
 
+class ConsumerCancelled(Exception):
+    """ Raised by QueuedConsumer when trying to use it after cancellation """
+
+
 class UndeliverableMessage(ValueError):
     pass
 
