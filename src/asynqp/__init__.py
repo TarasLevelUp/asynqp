@@ -5,12 +5,13 @@ from .message import Message, IncomingMessage
 from .connection import Connection
 from .channel import Channel
 from .exchange import Exchange
-from .queue import Queue, QueueBinding, Consumer
+from .queue import Queue, QueueBinding, Consumer, QueuedConsumer
 
 
 __all__ = [
     "Message", "IncomingMessage",
-    "Connection", "Channel", "Exchange", "Queue", "QueueBinding", "Consumer",
+    "Connection", "Channel", "Exchange", "Queue",
+    "QueueBinding", "Consumer", "QueuedConsumer",
     "connect", "connect_and_open_channel"
 ]
 __all__ += exceptions.__all__
@@ -58,7 +59,8 @@ def connect(host='localhost',
         kwargs['sock'] = sock
 
     dispatcher = Dispatcher()
-    transport, protocol = yield from loop.create_connection(lambda: AMQP(dispatcher, loop), **kwargs)
+    transport, protocol = yield from loop.create_connection(
+        lambda: AMQP(dispatcher, loop), **kwargs)
 
     # RPC-like applications require TCP_NODELAY in order to acheive
     # minimal response time. Actually, this library send data in one
