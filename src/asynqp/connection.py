@@ -78,9 +78,9 @@ class Connection(object):
             self._closing = True
             # Let the ConnectionActor do the actual close operations.
             # It will do the work on CloseOK
-            self.sender.send_Close(
-                0, 'Connection closed by application', 0, 0)
             try:
+                self.sender.send_Close(
+                    0, 'Connection closed by application', 0, 0)
                 yield from self.synchroniser.await(spec.ConnectionCloseOK)
             except AMQPConnectionError:
                 # For example if both sides want to close or the connection
@@ -205,6 +205,7 @@ class ConnectionActor(routing.Actor):
         # If there were anyone who expected an `*-OK` kill them, as no data
         # will follow after close
         self.synchroniser.killall(exc)
+        self.sender.killall(exc)
         # Notify all channels about error
         poison_frame = frames.PoisonPillFrame(exc)
         self.dispatcher.dispatch_all(poison_frame)

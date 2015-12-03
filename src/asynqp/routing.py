@@ -29,9 +29,15 @@ class Sender(object):
     def __init__(self, channel_id, protocol):
         self.channel_id = channel_id
         self.protocol = protocol
+        self._exception = None
 
     def send_method(self, method):
+        if self._exception is not None:
+            raise self._exception
         self.protocol.send_method(self.channel_id, method)
+
+    def killall(self, exc):
+        self._exception = exc
 
 
 class Actor(object):

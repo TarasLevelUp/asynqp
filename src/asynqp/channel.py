@@ -182,9 +182,9 @@ class Channel(object):
             self._closing = True
             # Let the ChannelActor do the actual close operations.
             # It will do the work on CloseOK
-            self.sender.send_Close(
-                0, 'Channel closed by application', 0, 0)
             try:
+                self.sender.send_Close(
+                    0, 'Channel closed by application', 0, 0)
                 yield from self.synchroniser.await(spec.ChannelCloseOK)
             except AMQPError:
                 # For example if both sides want to close or the connection
@@ -363,6 +363,7 @@ class ChannelActor(routing.Actor):
         # If there were anyone who expected an `*-OK` kill them, as no data
         # will follow after close. Any new calls should also raise an error.
         self.synchroniser.killall(exc)
+        self.sender.killall(exc)
         # Cancel all consumers with same error
         self.consumers.error(exc)
 
