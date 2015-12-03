@@ -92,6 +92,13 @@ class Connection(object):
         # finish all pending tasks
         yield from self.protocol.heartbeat_monitor.wait_closed()
 
+    @asyncio.coroutine
+    def drain_buffers(self):
+        """ Make sure all outgoing data to be passed to OS TCP buffers.
+            Will wait if OS buffers are full.
+        """
+        return (yield from self.protocol._drain_helper())
+
 
 @asyncio.coroutine
 def open_connection(loop, transport, protocol, dispatcher, connection_info):

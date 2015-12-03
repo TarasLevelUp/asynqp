@@ -1,7 +1,9 @@
+import asynqp
 import asyncio
 import uuid
 from datetime import datetime
-import asynqp
+from unittest.mock import patch
+
 from asynqp import spec
 from asynqp import frames
 from asynqp import message
