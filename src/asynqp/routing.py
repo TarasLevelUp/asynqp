@@ -33,14 +33,6 @@ class Sender(object):
     def send_method(self, method):
         self.protocol.send_method(self.channel_id, method)
 
-    @asyncio.coroutine
-    def drain(self):
-        """
-            Make sure all outgoing data to be passed to OS TCP buffers.
-            Will wait if OS buffers are full.
-        """
-        return (yield from self.protocol._drain_helper())
-
 
 class Actor(object):
     def __init__(self, synchroniser, sender, *, loop):
