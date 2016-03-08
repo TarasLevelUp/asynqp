@@ -72,8 +72,8 @@ class Method:
             raise AttributeError('{} object has no attribute {}'.format(type(self).__name__, name)) from e
 
     def __eq__(self, other):
-        return (type(self) == type(other)
-                and self.fields == other.fields)
+        return (type(self) == type(other) and
+                self.fields == other.fields)
 
 
 # Here, we load up the AMQP XML spec, traverse it,

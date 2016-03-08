@@ -40,9 +40,9 @@ class Frame(object):
         return frame
 
     def __eq__(self, other):
-        return (self.frame_type == other.frame_type
-                and self.channel_id == other.channel_id
-                and self.payload == other.payload)
+        return (self.frame_type == other.frame_type and
+                self.channel_id == other.channel_id and
+                self.payload == other.payload)
 
 
 class MethodFrame(Frame):

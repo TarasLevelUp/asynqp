@@ -85,8 +85,8 @@ class Message(object):
             self._properties[name] = value
 
     def __eq__(self, other):
-        return (self.body == other.body
-                and self._properties == other._properties)
+        return (self.body == other.body and
+                self._properties == other._properties)
 
     def __getattr__(self, name):
         try:
@@ -175,9 +175,9 @@ class ContentHeaderPayload(object):
         self.properties = properties
 
     def __eq__(self, other):
-        return (self.class_id == other.class_id
-                and self.body_length == other.body_length
-                and self.properties == other.properties)
+        return (self.class_id == other.class_id and
+                self.body_length == other.body_length and
+                self.properties == other.properties)
 
     def write(self, stream):
         stream.write(serialisation.pack_unsigned_short(self.class_id))
