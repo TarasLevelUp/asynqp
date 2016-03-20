@@ -100,12 +100,10 @@ def open_connection(loop, transport, protocol, dispatcher, connection_info):
     sender = ConnectionMethodSender(protocol)
     connection = Connection(loop, transport, protocol, synchroniser, sender, dispatcher, connection_info)
     actor = ConnectionActor(synchroniser, sender, protocol, connection, dispatcher, loop=loop)
-    reader = routing.QueuedReader(actor, loop=loop)
 
     try:
-        dispatcher.add_handler(0, reader.feed)
+        dispatcher.add_handler(0, actor.handle)
         protocol.send_protocol_header()
-        reader.ready()
 
         yield from synchroniser.await(spec.ConnectionStart)
         sender.send_StartOK(
@@ -116,7 +114,6 @@ def open_connection(loop, transport, protocol, dispatcher, connection_info):
             {'LOGIN': connection_info['username'], 'PASSWORD': connection_info['password']},
             'en_US'
         )
-        reader.ready()
 
         frame = yield from synchroniser.await(spec.ConnectionTune)
         # just agree with whatever the server wants. Make this configurable in future
@@ -124,12 +121,10 @@ def open_connection(loop, transport, protocol, dispatcher, connection_info):
         heartbeat_interval = frame.payload.heartbeat
         sender.send_TuneOK(frame.payload.channel_max, frame.payload.frame_max, heartbeat_interval)
 
-        sender.send_Open(connection_info['virtual_host'])
         protocol.start_heartbeat(heartbeat_interval)
-        reader.ready()
 
+        sender.send_Open(connection_info['virtual_host'])
         yield from synchroniser.await(spec.ConnectionOpenOK)
-        reader.ready()
     except:
         dispatcher.remove_handler(0)
         raise

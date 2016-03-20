@@ -32,14 +32,13 @@ class Channel(object):
         the numerical ID of the channel
     """
     def __init__(self, id, synchroniser, sender, basic_return_consumer,
-                 queue_factory, reader, *, loop):
+                 queue_factory, *, loop):
         self._loop = loop
         self.id = id
         self.synchroniser = synchroniser
         self.sender = sender
         self.basic_return_consumer = basic_return_consumer
         self.queue_factory = queue_factory
-        self.reader = reader
         self._closed = False
         # Indicates, that channel is closing by client(!) call
         self._closing = False
@@ -74,7 +73,7 @@ class Channel(object):
         :return: the new :class:`Exchange` object.
         """
         if name == '':
-            return exchange.Exchange(self.reader, self.synchroniser, self.sender, name, 'direct', True, False, False)
+            return exchange.Exchange(self.synchroniser, self.sender, name, 'direct', True, False, False)
 
         if not VALID_EXCHANGE_NAME_RE.match(name):
             raise ValueError(
@@ -87,9 +86,8 @@ class Channel(object):
             arguments or {})
         if not nowait:
             yield from self.synchroniser.await(spec.ExchangeDeclareOK)
-            self.reader.ready()
         ex = exchange.Exchange(
-            self.reader, self.synchroniser, self.sender, name, type, durable,
+            self.synchroniser, self.sender, name, type, durable,
             auto_delete, internal)
         return ex
 
@@ -151,7 +149,6 @@ class Channel(object):
         """
         self.sender.send_BasicQos(prefetch_size, prefetch_count, apply_globally)
         yield from self.synchroniser.await(spec.BasicQosOK)
-        self.reader.ready()
 
     def set_return_handler(self, handler):
         """
@@ -215,23 +212,21 @@ class ChannelFactory(object):
         consumers.add_consumer(basic_return_consumer)
 
         actor = ChannelActor(synchroniser, sender, loop=self.loop)
-        reader = routing.QueuedReader(actor, loop=self.loop)
 
         queue_factory = queue.QueueFactory(
-            sender, synchroniser, reader, consumers, loop=self.loop)
+            sender, synchroniser, consumers, loop=self.loop)
         channel = Channel(
             channel_id, synchroniser, sender, basic_return_consumer,
-            queue_factory, reader, loop=self.loop)
+            queue_factory, loop=self.loop)
 
         # Set actor dependencies
-        actor.message_receiver = MessageReceiver(synchroniser, sender, consumers, reader)
+        actor.message_receiver = MessageReceiver(synchroniser, sender, consumers, loop=self.loop)
         actor.consumers = consumers
         actor.channel = channel
 
-        self.dispatcher.add_handler(channel_id, reader.feed)
+        self.dispatcher.add_handler(channel_id, actor.handle)
         try:
             sender.send_ChannelOpen()
-            reader.ready()
             yield from synchroniser.await(spec.ChannelOpenOK)
         except:
             # don't rollback self.next_channel_id;
@@ -244,7 +239,6 @@ class ChannelFactory(object):
             self.dispatcher.remove_handler(channel_id)
             raise
 
-        reader.ready()
         return channel
 
 
@@ -368,13 +362,13 @@ class ChannelActor(routing.Actor):
 
 
 class MessageReceiver(object):
-    def __init__(self, synchroniser, sender, consumers, reader):
+    def __init__(self, synchroniser, sender, consumers, *, loop):
         self.synchroniser = synchroniser
         self.sender = sender
         self.consumers = consumers
-        self.reader = reader
         self.message_builder = None
         self.is_getok_message = None
+        self.loop = loop
 
     def receive_getOK(self, frame):
         payload = frame.payload
@@ -387,7 +381,6 @@ class MessageReceiver(object):
         )
         # Send message to synchroniser when done
         self.is_getok_message = True
-        self.reader.ready()
 
     def receive_deliver(self, frame):
         payload = frame.payload
@@ -402,7 +395,6 @@ class MessageReceiver(object):
 
         # Delivers message to consumers when done
         self.is_getok_message = False
-        self.reader.ready()
 
     def receive_return(self, frame):
         payload = frame.payload
@@ -417,12 +409,10 @@ class MessageReceiver(object):
 
         # Delivers message to BasicReturnConsumer when done
         self.is_getok_message = False
-        self.reader.ready()
 
     def receive_header(self, frame):
         assert self.message_builder is not None, "Received unexpected header"
         self.message_builder.set_header(frame.payload)
-        self.reader.ready()
 
     def receive_body(self, frame):
         assert self.message_builder is not None, "Received unexpected body"
@@ -432,16 +422,13 @@ class MessageReceiver(object):
             tag = self.message_builder.consumer_tag
             if self.is_getok_message:
                 self.synchroniser.notify(spec.BasicGetOK, (tag, msg))
-                # Dont call ready() if message arrive after GetOk. It's the
-                # ``Queue.get`` method's responsibility
             else:
-                self.consumers.deliver(tag, msg)
-                self.reader.ready()
+                # Delegate it to next loop run, cause consumer might not be
+                # ready yet (if we receive OK and msg in same TCP packet)
+                self.loop.call_soon(self.consumers.deliver, tag, msg)
 
             self.message_builder = None
             return
-        # If message is not done yet we still need more frames. Wait for them
-        self.reader.ready()
 
 
 class ChannelMethodSender(routing.Sender):

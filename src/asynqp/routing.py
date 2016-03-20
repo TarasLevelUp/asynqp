@@ -64,24 +64,37 @@ class Synchroniser(object):
             return fut
 
         for method in expected_methods:
-            self._futures[method].append(fut)
+            self._futures[method].append((fut, expected_methods))
 
-        return asyncio.shield(fut, loop=self._loop)
+        return fut
 
     def notify(self, method, result=None):
-        while True:
-            try:
-                fut = self._futures[method].popleft()
-            except IndexError:
-                # XXX: we can't just ignore this.
-                log.error("Got an unexpected method notification %s", method)
-                return
-            # We can have done futures if they were awaited together, like
-            # (spec.BasicGetOK, spec.BasicGetEmpty).
-            if not fut.done():
-                break
+        try:
+            fut, methods = self._futures[method].popleft()
+        except IndexError:
+            # XXX: we can't just ignore this.
+            log.error("Got an unexpected method notification %s %s",
+                      method, result)
+            return
 
-        fut.set_result(result)
+        if fut.done():
+            # We can have cancelled future if the ``Synchroniser.await()`` call
+            # was cancelled. We must still process the matching frame so we
+            # preserve frame order.
+            assert fut.cancelled(), \
+                "We should never have done but not cancelled futures"
+        else:
+            fut.set_result(result)
+
+        # Awaited for any frame to arrive. For example:
+        #   (spec.BasicGetOK, spec.BasicGetEmpty)
+        if len(methods) > 1:
+            # Remove other futures from waiters.
+            for m in methods:
+                if m == method:
+                    continue
+                poped_fut, _ = self._futures[m].popleft()
+                assert poped_fut is fut
 
     def killall(self, exc):
         """ Connection/Channel was closed. All subsequent and ongoing requests
@@ -90,38 +103,8 @@ class Synchroniser(object):
         self.connection_exc = exc
         # Set an exception for all others
         for method, futs in self._futures.items():
-            for fut in futs:
+            for fut, _ in futs:
                 if fut.done():
                     continue
                 fut.set_exception(exc)
         self._futures.clear()
-
-
-# When ready() is called, wait for a frame to arrive on the queue.
-# When the frame does arrive, dispatch it to the handler and do nothing
-# until someone calls ready() again.
-class QueuedReader(object):
-    def __init__(self, handler, *, loop):
-        self.handler = handler
-        self.is_waiting = False
-        self.pending_frames = collections.deque()
-        self._loop = loop
-
-    def ready(self):
-        assert not self.is_waiting, "ready() got called while waiting for a frame to be read"
-        if self.pending_frames:
-            frame = self.pending_frames.popleft()
-            # We will call it in another tick just to be more strict about the
-            # sequence of frames
-            self._loop.call_soon(self.handler.handle, frame)
-        else:
-            self.is_waiting = True
-
-    def feed(self, frame):
-        if self.is_waiting:
-            self.is_waiting = False
-            # We will call it in another tick just to be more strict about the
-            # sequence of frames
-            self._loop.call_soon(self.handler.handle, frame)
-        else:
-            self.pending_frames.append(frame)
